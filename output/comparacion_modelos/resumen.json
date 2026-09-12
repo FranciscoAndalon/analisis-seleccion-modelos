@@ -1,0 +1,13 @@
+{
+  "ganador": "Random Forest",
+  "metricas": {
+    "modelo": "Random Forest",
+    "accuracy": 0.9070063694267516,
+    "precision_macro": 0.9095002195104582,
+    "recall_macro": 0.9077701518510547,
+    "f1_macro": 0.9074219926325736
+  },
+  "muestras_prueba": 785,
+  "criterio": "F1 macro; desempate por accuracy y nombre",
+  "limite": "Selección sobre esta prueba; no es una evaluación independiente ni por participantes."
+}
