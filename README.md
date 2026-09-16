@@ -1,154 +1,75 @@
-# Selección de modelo — clasificación de ejercicios de rehabilitación
+# Comparación de modelos para REHAB
 
-Comparación de 4 algoritmos clásicos de aprendizaje automático para
-clasificar el tipo de movimiento (16 actividades) a partir de señales de
-sensores de un guante de rehabilitación, y selección justificada del
-modelo más adecuado.
+## Descripción del problema
 
----
+El problema es de clasificación multiclase: queremos identificar uno de los 16 movimientos de rehabilitación. La variable objetivo es `movimiento`, con valores de 0 a 15. Las entradas son 18 números que resumen las señales del sensor 2. Por eso podemos usar clasificadores para datos numéricos, como KNN, regresión logística y árboles.
 
-## 1. Dataset
+## Preparación de datos
 
-`output/dataset_ml.csv` contiene una fila por cada ciclo de movimiento
-registrado por el guante de rehabilitación, con:
+Se lee `output/dataset_ml.csv`, preparado en la actividad anterior (ml-sin-framework). Cada muestra tiene seis canales (`f1` a `f5` y `pitch3`), resumidos mediante media absoluta, desviación estándar poblacional y rango. En cada fila están esas 18 características y la etiqueta. Estos resúmenes describen cuánto varía la señal, aunque pierden su orden temporal.
 
-- **18 características numéricas**: 6 canales de sensor (`f1`-`f5`,
-  `pitch3`) × 3 descriptores estadísticos por canal (`media_abs`,
-  `desviacion`, `rango`).
-- **1 columna de etiqueta** (`movimiento`): un entero de `0` a `15` que
-  identifica cuál de las 16 actividades/ejercicios de rehabilitación se
-  realizó en ese ciclo.
+Se conservaron las 16 clases usando el sensor 2, ya que existe un archivo dañado del sensor 1. De 4,616 muestras se eliminaron 68 señales completamente nulas y 658 duplicados exactos; no había valores no finitos. Quedaron 3,890 muestras. La limpieza se hizo antes de dividirlas para evitar que una misma señal apareciera en ambos conjuntos. Si el CSV falta, el script lo vuelve a generar con las funciones de `main.py`, sin entrenar el KNN manual.
 
-`train_models.py` separa este dataset en entrenamiento y prueba (785
-muestras de prueba, según `resumen.json`) y entrena 4 modelos con esa
-misma partición, para que la comparación entre ellos sea justa.
+## Modelos seleccionados
 
----
+| Modelo | Configuración | Por qué se eligió |
+|---|---|---|
+| KNN | 5 vecinos, distancia euclidiana y voto uniforme | Permite comparar con la técnica manual anterior |
+| Regresión logística | C=1, lbfgs, máximo 2,000 iteraciones | Sirve como comparación con un clasificador lineal |
+| Árbol de decisión | Profundidad máxima 10, semilla 42 | Aprende reglas y relaciones no lineales; se limita su profundidad |
+| Random Forest | 100 árboles, semilla 42, profundidad sin límite | Combina varios árboles para no depender de uno solo |
 
-## 2. Modelos comparados
+Los demás parámetros conservan sus valores predeterminados. No se realizó búsqueda de hiperparámetros ni ajustes según la prueba.
 
-| Modelo | Configuración usada |
-|---|---|
-| KNN | `k=5`, distancia euclidiana, con estandarización previa (`StandardScaler`) |
-| Regresión logística | `C=1`, solver `lbfgs`, con estandarización previa |
-| Árbol de decisión | `max_depth=10` |
-| Random Forest | `n_estimators=100` |
+## Entrenamiento
 
-Los 4 se evalúan sobre el **mismo conjunto de prueba**, nunca usado
-durante el entrenamiento, con las métricas: accuracy, precision macro,
-recall macro y F1 macro (macro = las 16 actividades pesan igual,
-independientemente de cuántas muestras tenga cada una).
+Se reutiliza `dividir_datos` de la primera actividad: mezcla cada clase con semilla 42 y toma aproximadamente 80 % para entrenamiento y 20 % para prueba. Se conservan exactamente las mismas 3,105 muestras de entrenamiento y 785 de prueba para los cuatro modelos.
 
----
+KNN y regresión logística usan un `Pipeline` con `StandardScaler`, ajustado exclusivamente con entrenamiento. Así la escala de una característica no domina el modelo y los datos de prueba no intervienen en la normalización. Los árboles reciben las características sin estandarizar. La regresión logística convergió en 133 iteraciones; el programa detiene el entrenamiento si aparece una advertencia de falta de convergencia.
 
-## 3. Resultados
+`train_models.py` guarda los modelos, el orden de las características, la prueba y la versión de scikit-learn en `output/comparacion_modelos/modelos.joblib`. También comprueba que las predicciones no cambian después de guardar y cargar. `evaluate_models.py` carga ese archivo y evalúa sin entrenar de nuevo.
 
-| Modelo | Accuracy | Precision (macro) | Recall (macro) | F1 (macro) |
-|---|---|---|---|---|
-| **Random Forest** | **0.9070** | **0.9095** | **0.9078** | **0.9074** |
+## Comparación
+
+Resultados obtenidos con los datos incluidos. Las métricas se muestran entre 0 y 1:
+
+| Modelo | Accuracy | Precisión macro | Recall macro | F1 macro |
+|---|---:|---:|---:|---:|
+| Random Forest | 0.9070 | 0.9095 | 0.9078 | 0.9074 |
 | Árbol de decisión | 0.6624 | 0.6613 | 0.6591 | 0.6512 |
 | KNN | 0.6331 | 0.6310 | 0.6411 | 0.6273 |
 | Regresión logística | 0.3682 | 0.3761 | 0.3618 | 0.3577 |
 
-**Modelo ganador: Random Forest**, según `resumen.json`, con el criterio
-"mayor F1 macro; desempate por accuracy y nombre".
+Accuracy indica la proporción total de aciertos. Precisión mide cuántas predicciones de una clase son correctas; recall mide cuántos ejemplos reales de esa clase se reconocen. F1 combina precisión y recall. El promedio macro calcula la métrica por clase y luego promedia las 16 clases con el mismo peso. Se usa cero cuando una métrica no se puede calcular por falta de predicciones.
 
----
+![Matrices de confusión](output/comparacion_modelos/matrices_confusion.png)
 
-## 4. Por qué Random Forest es el modelo más adecuado
+Las filas son los movimientos reales y las columnas los predichos. Cada matriz suma 785 muestras; la diagonal contiene los aciertos. Las cuatro figuras comparten la misma escala de color.
 
-### 4.1 Ventaja de desempeño clara y consistente
+El KNN de scikit-learn obtuvo 497 aciertos, frente a 532 del manual. Se comprobó que las 57 diferencias de predicción se explican por la regla de votación: al aplicar el desempate manual a los vecinos de scikit-learn se recuperan todas las predicciones anteriores. La implementación manual desempata por suma de distancias antes de usar la etiqueta; el voto uniforme de la biblioteca elige la etiqueta menor en un empate.
 
-Random Forest no solo gana en F1 macro (criterio de selección), sino en
-**las 4 métricas simultáneamente**, y por un margen muy amplio: ~24 puntos
-porcentuales de accuracy sobre el segundo lugar (Árbol de decisión,
-0.907 vs 0.662) y más del doble de accuracy que la Regresión logística
-(0.907 vs 0.368). No es una victoria marginal ni depende de qué métrica
-se privilegie — gana de forma robusta en cualquiera de ellas.
+## Decisión final
 
-### 4.2 Las matrices de confusión muestran por qué
+Se seleccionó Random Forest porque obtuvo el mayor F1 macro (0.9074) y también la mayor accuracy (90.70 %): acertó 712 de 785 muestras. Superó al árbol individual por 25.63 puntos porcentuales de F1 macro. En esta comparación, combinar varios árboles permitió reconocer mejor los movimientos que usar un solo árbol, vecinos cercanos o un clasificador lineal.
 
-En `matrices_confusion.png` se ve claramente el patrón:
+Su ventaja es que puede representar relaciones no lineales entre las características sin normalizarlas. Como desventajas, ocupa más espacio y es más difícil explicar cada predicción que con un árbol sencillo. Todavía cometió 73 errores; por ejemplo, confundió 7 muestras del movimiento 14 con el 13.
 
-- **Random Forest** tiene una diagonal fuertemente dominante en las 16
-  actividades, con muy poca "fuga" de predicciones hacia otras clases.
-- **Árbol de decisión** y **KNN** muestran confusión notable entre
-  grupos de actividades específicos (por ejemplo, varias de las
-  actividades intermedias se confunden sistemáticamente entre sí),
-  reflejo de que esas actividades probablemente involucran movimientos
-  anatómicamente parecidos que un solo árbol o una distancia simple no
-  logran separar bien.
-- **Regresión logística** es la que muestra la confusión más extendida y
-  dispersa por toda la matriz, consistente con que las clases no se
-  separan mediante fronteras lineales.
+El criterio elegido antes de evaluar fue mayor F1 macro, con desempate por accuracy y después por nombre. Random Forest es el mejor de esta comparación; como se eligió usando esta prueba, su resultado no es una evaluación independiente posterior. Además, la separación es por muestras y no por participantes, porque los archivos usados no incluyen sus identificadores. No se puede asegurar el mismo desempeño en personas nuevas.
 
-### 4.3 Por qué tiene sentido, en términos del algoritmo
+## Cómo ejecutar el proyecto
 
-- **Reduce la varianza de un árbol individual**: un Random Forest es un
-  conjunto (ensamble) de muchos árboles de decisión, cada uno entrenado
-  con una muestra aleatoria distinta de los datos (bagging) y
-  considerando un subconjunto aleatorio de características en cada
-  división. Esto ataca justo la debilidad de un árbol individual (alta
-  varianza / tendencia a sobreajustar a particularidades del set de
-  entrenamiento), que es exactamente lo que se observa aquí: el árbol
-  de decisión, solo, se queda muy por debajo del bosque completo.
-- **No asume fronteras lineales**: a diferencia de la regresión
-  logística, que traza fronteras de decisión lineales entre clases, un
-  árbol (y por lo tanto un bosque) puede capturar relaciones no lineales
-  y interacciones complejas entre las 18 características — más
-  adecuado para señales de sensores biomecánicos, donde la relación
-  entre las estadísticas de la señal y el tipo de movimiento no es
-  lineal.
-- **Menos sensible al ruido/redundancia entre features que KNN**: KNN
-  clasifica según distancia entre observaciones; si algunas de las 18
-  características son ruidosas o están correlacionadas entre sí, la
-  distancia euclidiana pierde poder discriminativo. Un Random Forest,
-  al elegir subconjuntos aleatorios de features en cada división, es más
-  robusto a ese tipo de redundancia.
+Desde la carpeta del proyecto, correr:
 
-### 4.4 Costo razonable
+```bash
+python -m pip install -r requirements.txt
+python train_models.py
+python evaluate_models.py
+```
 
-A cambio de ese desempeño, Random Forest es algo menos interpretable que
-un árbol individual (no se puede "leer" una sola secuencia de reglas) y
-tarda un poco más en entrenar/predecir que un modelo lineal — pero con
-solo 18 características y unos miles de observaciones, ese costo es
-mínimo y claramente vale la pena frente a la ganancia de casi 25 puntos
-de accuracy.
+Si el sistema utiliza `python3`, sustituir `python` por `python3`. Las rutas dependen de la ubicación de los scripts, así que también se pueden ejecutar mediante su ruta absoluta desde otra carpeta.
 
----
+Versiones verificadas: NumPy 2.5.3, scikit-learn 1.9.1, Matplotlib 3.11.2 y Joblib 1.6.0. Si cambia scikit-learn, hay que volver a entrenar. Si se intenta evaluar sin modelos guardados, aparece el comando para entrenarlos.
 
-## 5. Limitaciones (ya señaladas en `resumen.json`)
+Los resultados se guardan en `output/comparacion_modelos/`: `resultados.csv` contiene la tabla completa; `predicciones.csv`, las etiquetas reales y las cuatro predicciones por muestra; `matrices_confusion.png`, las matrices; y `resumen.json`, el ganador y sus métricas. Cada ejecución sobrescribe las salidas de esta actividad.
 
-> *"Selección sobre esta prueba; no es una evaluación independiente ni
-> por participantes."*
-
-Es decir:
-
-- La comparación se hizo sobre **un solo split** de entrenamiento/prueba,
-  no sobre validación cruzada (cross-validation). Los números podrían
-  variar algo con otra partición aleatoria de los datos.
-- No se evaluó específicamente la capacidad de **generalizar a nuevos
-  participantes** (si los ciclos de train y test pertenecen a las mismas
-  personas, el modelo podría estar aprendiendo patrones específicos de
-  esos participantes en vez de patrones generales del movimiento).
-- Los hiperparámetros de cada modelo (`k=5`, `max_depth=10`,
-  `n_estimators=100`, etc.) son valores razonables pero no se afinaron
-  exhaustivamente (por ejemplo, con `random_forest.py` se puede seguir
-  probando `--n-estimators`, `--max-depth`, etc. para exprimir un poco
-  más de desempeño).
-
-## 6. Recomendaciones para trabajo futuro
-
-- Repetir la comparación con **validación cruzada** (k-fold) para
-  confirmar que la ventaja de Random Forest es estable y no un artefacto
-  de esta partición específica.
-- Si el dataset lo permite, evaluar con una **partición por
-  participante** (todos los ciclos de una persona en train o en test,
-  nunca mezclados) para medir generalización real a personas nuevas.
-- Afinar hiperparámetros del Random Forest con `random_forest.py`
-  (`--n-estimators`, `--max-depth`, `--min-samples-leaf`, `--max-features`)
-  usando un conjunto de validación separado del de prueba final.
-- Explorar si separar cada ciclo en ventanas de tiempo más cortas (en
-  vez de un solo resumen estadístico por ciclo completo) mejora aún más
-  el desempeño, ya que actualmente se pierde parte de la información
-  temporal de cómo evoluciona cada movimiento.
+Se verificaron la generación del CSV cuando falta, la separación sin características idénticas entre conjuntos, las métricas con ejemplos pequeños, la normalización solo con entrenamiento, la conservación de predicciones al guardar y la ejecución desde otra carpeta. Dos entrenamientos dieron las mismas predicciones y tablas. El código manual y los datos originales se conservaron.
