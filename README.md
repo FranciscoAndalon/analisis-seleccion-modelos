@@ -147,3 +147,12 @@ El script comprueba que la prueba y el orden de las características coincidan c
 Las salidas originales permanecen en su carpeta. Se verificaron los grupos disjuntos y estratificados, el uso exclusivo de entrenamiento durante la búsqueda y el desempate. También se comprobó que guardar y cargar conserva las predicciones y que repetir el script desde otra carpeta conserva la selección y los resultados.
 
 Referencias de implementación: [parámetros de RandomForestClassifier](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html) y [validación cruzada](https://scikit-learn.org/stable/modules/cross_validation.html).
+
+### Interfaz web
+
+Se construyó una pequeña interfaz web en html, para poder simular predicciones de diferentes ejercicios y ver como una gráfica con métricas se comporta. Para correrlo, desde la carpeta del proyecto, y después de haber ejecutado los comandos mencionados anteriormente sobre como ejecutar el proyecto, en la terminal, ejecutaremos:
+
+```bash
+python -m http.server 8000
+```
+Después, pegamos http://localhost:8000/ en nuestro navegador.
