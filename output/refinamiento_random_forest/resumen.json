@@ -1,0 +1,31 @@
+{
+  "configuracion_elegida": "Más árboles",
+  "parametros": {
+    "n_estimators": 200,
+    "max_depth": null,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "max_features": "sqrt",
+    "max_samples": null
+  },
+  "criterio": "Mayor F1 macro promedio de 3 folds sobre entrenamiento",
+  "n_entrenamiento": 3105,
+  "n_prueba": 785,
+  "resultados_prueba": [
+    {
+      "modelo": "RF original",
+      "accuracy": 0.9070063694267516,
+      "precision_macro": 0.9095002195104582,
+      "recall_macro": 0.9077701518510547,
+      "f1_macro": 0.9074219926325736
+    },
+    {
+      "modelo": "RF seleccionado por CV",
+      "accuracy": 0.9082802547770701,
+      "precision_macro": 0.9092211101616475,
+      "recall_macro": 0.9078192527834812,
+      "f1_macro": 0.9073192104995083
+    }
+  ],
+  "limite": "La prueba ya se utilizó para seleccionar la familia Random Forest."
+}
