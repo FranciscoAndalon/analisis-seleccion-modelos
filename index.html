@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prueba de modelos</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color: #17202a; background: #f1f3f5; }
+    body { max-width: 760px; margin: 40px auto; padding: 0 18px; }
+    main { background: #fff; border: 1px solid #ccd2d8; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 25px; }
+    p { color: #4e5963; }
+    label { display: block; margin: 22px 0 6px; font-weight: bold; }
+    select, button { box-sizing: border-box; font: inherit; padding: 10px; }
+    select { width: 100%; border: 1px solid #9da7b1; background: #fff; }
+    button { margin-top: 18px; width: 100%; border: 0; color: #fff; background: #1769aa; cursor: pointer; }
+    button:hover { background: #0d568e; }
+    button:disabled { background: #9da7b1; cursor: wait; }
+    #estado { min-height: 24px; margin: 22px 0 8px; }
+    .resultado { border-top: 1px solid #dfe3e6; padding: 14px 0; display: flex; justify-content: space-between; gap: 12px; }
+    .resultado strong { color: #1769aa; }
+    .seccion-metricas { margin-top: 28px; border-top: 1px solid #dfe3e6; padding-top: 18px; }
+    .seccion-metricas h2 { font-size: 19px; margin: 0 0 4px; }
+    .grafica-metricas { width: 100%; margin-top: 18px; border: 1px solid #dfe3e6; }
+    canvas { display: block; width: 100%; height: 280px; }
+    .oculto { display: none; }
+    small { color: #66717b; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Predicción de modelos</h1>
+    <p>Selecciona un ejercicio y prueba una muestra aleatoria del conjunto de prueba.</p>
+
+    <label for="ejercicio">Ejercicio</label>
+    <select id="ejercicio">
+      <option value="">Selecciona un ejercicio</option>
+    </select>
+    <button id="predecir" type="button" disabled>Predecir</button>
+
+    <div id="estado" role="status"></div>
+    <section id="salida" class="oculto" aria-live="polite">
+      <small id="muestra"></small>
+      <div id="modelos"></div>
+    </section>
+
+    <section class="seccion-metricas" aria-labelledby="titulo-metricas">
+      <h2 id="titulo-metricas">Métricas de Random Forest</h2>
+      <small>Resultados obtenidos sobre el conjunto de prueba.</small>
+      <div class="grafica-metricas">
+        <canvas id="grafica-metricas" width="680" height="280"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const selector = document.querySelector('#ejercicio');
+    const boton = document.querySelector('#predecir');
+    const estado = document.querySelector('#estado');
+    const salida = document.querySelector('#salida');
+    const muestra = document.querySelector('#muestra');
+    const modelos = document.querySelector('#modelos');
+    const graficaMetricas = document.querySelector('#grafica-metricas');
+    let filas = [];
+    let nombres = [];
+    let metricasBase = [];
+    let muestrasEnVivo = 0;
+    let aciertosEnVivo = 0;
+
+    for (let ejercicio = 0; ejercicio < 16; ejercicio += 1) {
+      const opcion = document.createElement('option');
+      opcion.value = ejercicio;
+      opcion.textContent = `Ejercicio ${String(ejercicio).padStart(3, '0')}`;
+      selector.append(opcion);
+    }
+
+    function csv(texto) {
+      return texto.trim().split('\n').map((linea) => linea.split(',').map((celda) => celda.trim()));
+    }
+
+    async function cargarPredicciones() {
+      const respuesta = await fetch('output/comparacion_modelos/predicciones.csv');
+      if (!respuesta.ok) throw new Error('No se pudo cargar predicciones.csv');
+      const filasCsv = csv(await respuesta.text());
+      const indiceRandomForest = filasCsv[0].indexOf('Random Forest');
+      if (indiceRandomForest < 0) throw new Error('No se encontró Random Forest');
+      nombres = ['Random Forest'];
+      filas = filasCsv.slice(1).map((fila) => ({
+        real: Number(fila[0]),
+        predicciones: [Number(fila[indiceRandomForest])]
+      }));
+      boton.disabled = false;
+      estado.textContent = 'Listo. La muestra se elige al azar en cada prueba.';
+    }
+
+    async function cargarMetricas() {
+      const respuesta = await fetch('output/comparacion_modelos/resultados.csv');
+      if (!respuesta.ok) throw new Error('No se pudo cargar resultados.csv');
+      const filasCsv = csv(await respuesta.text());
+      const encabezados = filasCsv[0];
+      const fila = filasCsv.slice(1).find((valores) => valores[0] === 'Random Forest');
+      if (!fila) throw new Error('No se encontraron métricas de Random Forest');
+      const metricas = ['accuracy', 'precision_macro', 'recall_macro', 'f1_macro'].map((nombre) => ({
+        nombre: nombre === 'precision_macro' ? 'Precisión' : nombre === 'f1_macro' ? 'F1' : nombre === 'accuracy' ? 'Accuracy' : 'Recall',
+        valor: Number(fila[encabezados.indexOf(nombre)])
+      }));
+      metricasBase = metricas;
+      dibujarMetricas(metricas);
+    }
+
+    function dibujarMetricas(metricas) {
+      const contexto = graficaMetricas.getContext('2d');
+      const escala = window.devicePixelRatio || 1;
+      const ancho = graficaMetricas.clientWidth;
+      const alto = 280;
+      graficaMetricas.width = ancho * escala;
+      graficaMetricas.height = alto * escala;
+      contexto.scale(escala, escala);
+      contexto.clearRect(0, 0, ancho, alto);
+      contexto.font = '12px Arial';
+      contexto.strokeStyle = '#dfe3e6';
+      contexto.fillStyle = '#66717b';
+      contexto.textAlign = 'right';
+      for (let nivel = 0; nivel <= 1; nivel += 0.25) {
+        const y = 220 - nivel * 170;
+        contexto.beginPath();
+        contexto.moveTo(54, y);
+        contexto.lineTo(ancho - 20, y);
+        contexto.stroke();
+        contexto.fillText(nivel.toFixed(2), 46, y + 4);
+      }
+      const anchoBarra = Math.min(72, (ancho - 100) / metricas.length - 18);
+      metricas.forEach((metrica, indice) => {
+        const x = 74 + indice * ((ancho - 100) / metricas.length);
+        const altura = metrica.valor * 170;
+        contexto.fillStyle = '#1769aa';
+        contexto.fillRect(x, 220 - altura, anchoBarra, altura);
+        contexto.fillStyle = '#17202a';
+        contexto.textAlign = 'center';
+        contexto.fillText(metrica.valor.toFixed(3), x + anchoBarra / 2, 210 - altura);
+        contexto.fillText(metrica.nombre, x + anchoBarra / 2, 244);
+      });
+    }
+
+    function mostrarResultado() {
+      const elegidas = filas.filter((fila) => fila.real === Number(selector.value));
+      if (!elegidas.length) {
+        estado.textContent = 'No hay muestras de prueba para ese ejercicio.';
+        salida.classList.add('oculto');
+        return;
+      }
+      const fila = elegidas[Math.floor(Math.random() * elegidas.length)];
+      muestrasEnVivo += 1;
+      if (fila.real === fila.predicciones[0]) aciertosEnVivo += 1;
+      muestra.textContent = `Muestra aleatoria del ejercicio ${String(fila.real).padStart(3, '0')}`;
+      modelos.replaceChildren(...nombres.map((nombre, indice) => {
+        const linea = document.createElement('div');
+        linea.className = 'resultado';
+        linea.innerHTML = `<span>${nombre}</span><strong>Ejercicio ${String(fila.predicciones[indice]).padStart(3, '0')}</strong>`;
+        return linea;
+      }));
+      const metricasEnVivo = metricasBase.map((metrica) => ({
+        ...metrica,
+        valor: metrica.nombre === 'Accuracy' ? aciertosEnVivo / muestrasEnVivo : metrica.valor
+      }));
+      dibujarMetricas(metricasEnVivo);
+      estado.textContent = `Predicción completada. ${aciertosEnVivo}/${muestrasEnVivo} aciertos en vivo.`;
+      salida.classList.remove('oculto');
+    }
+
+    selector.addEventListener('change', () => {
+      boton.disabled = !selector.value || !filas.length;
+      salida.classList.add('oculto');
+    });
+    boton.addEventListener('click', mostrarResultado);
+    cargarPredicciones().catch((error) => {
+      estado.textContent = 'Abre este archivo desde un servidor local para cargar los resultados.';
+      console.error(error);
+    });
+    cargarMetricas().catch((error) => console.error(error));
+  </script>
+</body>
+</html>
